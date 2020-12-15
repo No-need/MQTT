@@ -15,7 +15,7 @@ namespace MQTT
 {
     class Program
     {
-        static string OpenPoseOutPath = @"C:\Users\noneed\Desktop\OpenPose";
+        static string OpenPoseOutPath = @"D:\openpose\examples\media_out";
         static int stateCounnt = 0;
         public static ImageDataModel GetImageImageModel()
         {
@@ -40,6 +40,12 @@ namespace MQTT
             return model;
         }
 
+        /// <summary>
+        /// ID為檔案編號，file為檔案完整路徑(包含檔案名稱)
+        /// </summary>
+        /// <param name="ID"></param>
+        /// <param name="file"></param>
+        /// <returns></returns>
         public static ImageDataModel GetImageData(string ID, string file)
         {
             string json = File.ReadAllText(file, new System.Text.UTF8Encoding());
@@ -83,12 +89,12 @@ namespace MQTT
             Dictionary<int, KeyPointModel> Vector = new Dictionary<int, KeyPointModel>();
             foreach (var point in DataModel2.KeyPointList)
             {
-                if(point.Confidence>0.3&& DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].Confidence > 0.3)
+                if (true)
                 {
                     KeyPointModel deviation = new KeyPointModel
                     {
-                        x = point.x - DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].x,
-                        y = point.y - DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].y,
+                        x = Math.Abs(point.x - DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].x),
+                        y = Math.Abs(point.y - DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].y),
                         Confidence = (point.Confidence + DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].Confidence) / 2
                     };
                     Vector.Add(DataModel2.KeyPointList.IndexOf(point), deviation);
@@ -100,7 +106,7 @@ namespace MQTT
             foreach (var v in Vector)
             {
                 Console.WriteLine($"{v.Key.ToString("D2")},偏移量:x={v.Value.x.ToString("F3")},y={v.Value.y.ToString("F3")}");
-                if (v.Value.Confidence > 0.3)
+                if (true)
                 {
                     switch (v.Key)
                     {
@@ -111,18 +117,18 @@ namespace MQTT
                         case 2:
                             break;
                         case 3:
-                            if (v.Value.x < 3 && v.Value.y < 3) count++;
+                            if (v.Value.x < 10 && v.Value.y < 10) count++;
                             break;
                         case 4:
-                            if (v.Value.x < 3 && v.Value.y < 3) count++;
+                            if (v.Value.x < 10 && v.Value.y < 10) count++;
                             break;
                         case 5:
                             break;
                         case 6:
-                            if (v.Value.x < 3 && v.Value.y < 3) count++;
+                            if (v.Value.x < 10 && v.Value.y < 10) count++;
                             break;
                         case 7:
-                            if (v.Value.x < 3 && v.Value.y < 3) count++;
+                            if (v.Value.x < 10 && v.Value.y < 10) count++;
                             break;
                         case 15:
                             break;
@@ -135,13 +141,14 @@ namespace MQTT
                     }
                 }
             }
-            if (count < 4)
+            if (count >= 4)
             {
                 stateCounnt++;
             }
             else
             {
                 stateCounnt--;
+                if (stateCounnt < 0) stateCounnt = 0;
             };
         }
 
@@ -197,33 +204,35 @@ namespace MQTT
             {
                 try
                 {
-                    var file = Directory.GetFiles(OpenPoseOutPath).OrderByDescending(x => x).Take(2);
-                    var Pathsplit1 = file.ElementAt(1).Split("\\");//最新的
-                    var Pathsplit2 = file.ElementAt(0).Split("\\");//前一張
+                    var file = OpenPoseDirectory.GetFiles("*.json").OrderByDescending(x=>x.CreationTime).Take(2);
+                    if (file.Count() < 2) continue;
+                    var Pathsplit1 = file.ElementAt(1).FullName.Split("\\");//最新的
+                    var Pathsplit2 = file.ElementAt(0).FullName.Split("\\");//前一張
                     int.TryParse(Pathsplit2[Pathsplit2.Count() - 1].Split("_")[0], out var fileIndex2);
                     int.TryParse(Pathsplit1[Pathsplit1.Count() - 1].Split("_")[0], out var fileIndex1);
                     if (fileIndex2 > MaxfileIndex)
                     {
-                        var DataModel1 = GetImageData(fileIndex1.ToString(), file.ElementAt(1));
-                        var DataModel2 = GetImageData(fileIndex2.ToString(), file.ElementAt(0));
+                        var DataModel1 = GetImageData(fileIndex1.ToString(), file.ElementAt(1).FullName);
+                        var DataModel2 = GetImageData(fileIndex2.ToString(), file.ElementAt(0).FullName);
+                        MaxfileIndex = fileIndex2;
                         if (DataModel1.KeyPointList.Count() == 0 || DataModel2.KeyPointList.Count() == 0)
                         {
-                            break;
+                            continue;
                         }
                         CheckResult(DataModel1, DataModel2);
-                        MaxfileIndex = fileIndex2;
+                    }
+                    if (stateCounnt >= 7)
+                    {
+                        Console.WriteLine("醒醒!!!!!!");
+                        Thread.Sleep(5000);
+                        stateCounnt = 0;
                     }
                 }
                 catch (Exception ex)
                 {
-
-                }
-                if (stateCounnt >= 2)
-                {
-                    Console.WriteLine("醒醒!!!!!!");
+                    Console.WriteLine(ex);
                 }
             }
         }
     }
 }
-//FUCK YOU GITHUB
