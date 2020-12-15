@@ -1,22 +1,14 @@
 ﻿using MQTTnet;
 using MQTTnet.Client;
-using MQTTnet.Client.Connecting;
-using MQTTnet.Client.Disconnecting;
-using MQTTnet.Client.ExtendedAuthenticationExchange;
 using MQTTnet.Client.Options;
-using MQTTnet.Client.Publishing;
-using MQTTnet.Client.Receiving;
-using MQTTnet.Client.Subscribing;
-using MQTTnet.Client.Unsubscribing;
 using MQTTnet.Protocol;
+using MQTT.Model;
 using System;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
-using MQTT.Model;
 using System.Text.Json;
-using System.Drawing;
 using System.Collections.Generic;
 using System.Linq;
 namespace MQTT
@@ -24,7 +16,7 @@ namespace MQTT
     class Program
     {
         static string OpenPoseOutPath = @"C:\Users\noneed\Desktop\OpenPose";
-
+        static int stateCounnt = 0;
         public static ImageDataModel GetImageImageModel()
         {
             string CorrectPath = Path.Combine(@"C:\Users\noneed\Desktop", "Correct.json");
@@ -48,14 +40,14 @@ namespace MQTT
             return model;
         }
 
-        public static ImageDataModel GetImageData(string ID,string file)
+        public static ImageDataModel GetImageData(string ID, string file)
         {
             string json = File.ReadAllText(file, new System.Text.UTF8Encoding());
             var Object = JsonSerializer.Deserialize<OpenPoseModel>(json);
             if (Object.people.Count() == 0)
             {
                 Console.WriteLine($"ID:{ID}:無效的json檔");
-                return new ImageDataModel() {ID=ID,Date=DateTime.Now };
+                return new ImageDataModel() { ID = ID, Date = DateTime.Now };
             }
             List<KeyPointModel> List = new List<KeyPointModel>();
 
@@ -86,27 +78,71 @@ namespace MQTT
             return model;
         }
 
-        public static void CheckResult(ImageDataModel CorrectImage, ImageDataModel DataModel)
+        public static void CheckResult(ImageDataModel DataModel1, ImageDataModel DataModel2)
         {
-            Dictionary<int,KeyPointModel> Vector = new Dictionary<int,KeyPointModel>();
-            foreach(var point in DataModel.KeyPointList)
+            Dictionary<int, KeyPointModel> Vector = new Dictionary<int, KeyPointModel>();
+            foreach (var point in DataModel2.KeyPointList)
             {
-                if (point.Confidence > 0.3)
+                if(point.Confidence>0.3&& DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].Confidence > 0.3)
                 {
                     KeyPointModel deviation = new KeyPointModel
                     {
-                        x = point.x - CorrectImage.KeyPointList[DataModel.KeyPointList.IndexOf(point)].x,
-                        y = point.y - CorrectImage.KeyPointList[DataModel.KeyPointList.IndexOf(point)].y,
-                        Confidence = point.Confidence
+                        x = point.x - DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].x,
+                        y = point.y - DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].y,
+                        Confidence = (point.Confidence + DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].Confidence) / 2
                     };
-                    Vector.Add(DataModel.KeyPointList.IndexOf(point),deviation);
+                    Vector.Add(DataModel2.KeyPointList.IndexOf(point), deviation);
                 }
+
             }
-            Console.WriteLine("與正確姿勢比對");
+            Console.WriteLine("與前一張比對");
+            int count = 0;
             foreach (var v in Vector)
             {
                 Console.WriteLine($"{v.Key.ToString("D2")},偏移量:x={v.Value.x.ToString("F3")},y={v.Value.y.ToString("F3")}");
+                if (v.Value.Confidence > 0.3)
+                {
+                    switch (v.Key)
+                    {
+                        case 0:
+                            break;
+                        case 1:
+                            break;
+                        case 2:
+                            break;
+                        case 3:
+                            if (v.Value.x < 3 && v.Value.y < 3) count++;
+                            break;
+                        case 4:
+                            if (v.Value.x < 3 && v.Value.y < 3) count++;
+                            break;
+                        case 5:
+                            break;
+                        case 6:
+                            if (v.Value.x < 3 && v.Value.y < 3) count++;
+                            break;
+                        case 7:
+                            if (v.Value.x < 3 && v.Value.y < 3) count++;
+                            break;
+                        case 15:
+                            break;
+                        case 16:
+                            break;
+                        case 17:
+                            break;
+                        case 18:
+                            break;
+                    }
+                }
             }
+            if (count < 4)
+            {
+                stateCounnt++;
+            }
+            else
+            {
+                stateCounnt--;
+            };
         }
 
 
@@ -116,7 +152,7 @@ namespace MQTT
             var factory = new MqttFactory();
             var mqttClient = factory.CreateMqttClient();
             var options = new MqttClientOptionsBuilder()
-                .WithTcpServer("iot.cht.com.tw",1883).WithCredentials("PKXRT95R2GFC4BKW4P", "PKXRT95R2GFC4BKW4P")
+                .WithTcpServer("iot.cht.com.tw", 1883).WithCredentials("PKXRT95R2GFC4BKW4P", "PKXRT95R2GFC4BKW4P")
                 .WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V311).Build();
             UnicodeEncoding uniEncoding = new UnicodeEncoding();
             byte[] firstString = uniEncoding.GetBytes("");
@@ -139,8 +175,7 @@ namespace MQTT
                 SensorDataModel model = JsonSerializer.Deserialize<SensorDataModel>(Encoding.UTF8.GetString(e.ApplicationMessage.Payload));
                 Console.WriteLine($"QoS模式 : {e.ApplicationMessage.QualityOfServiceLevel}");
                 Console.WriteLine($"Retain = {e.ApplicationMessage.Retain}");
-                Console.WriteLine();
-        });
+            });
 
         }
         static void Main(string[] args)
@@ -151,33 +186,43 @@ namespace MQTT
             string json;
             string filePath = Path.Combine(OpenPoseOutPath, $"{MaxfileIndex.ToString("D12")}_keypoints.json");
             DirectoryInfo OpenPoseDirectory = new DirectoryInfo(OpenPoseOutPath);
-            var CorrectImage =  GetImageImageModel();
-            var file = Directory.GetFiles(OpenPoseOutPath);
-            foreach(var s in file)
-            {
-                var DataModel = GetImageData(MaxfileIndex.ToString(), s);
-                CheckResult(CorrectImage, DataModel);
-                MaxfileIndex++;
-            }
-            Console.ReadKey();
-            //while (true)
+            //foreach(var s in file)
             //{
-            //    try
-            //    {
-            //        var file = Directory.GetFiles(OpenPoseOutPath).OrderByDescending(x => x).FirstOrDefault();
-            //        var Pathsplit = file.Split("\\");
-            //        int.TryParse(Pathsplit[Pathsplit.Count() - 1].Split("_")[0], out var fileIndex);
-            //        if (fileIndex > MaxfileIndex)
-            //        {
-            //            var DataModel = GetImageData(fileIndex.ToString(), file);
-            //            CheckResult(CorrectImage,DataModel);
-            //            MaxfileIndex = fileIndex;
-            //        }
-            //    }catch(Exception ex)
-            //    {
-
-            //    }
+            //    var DataModel = GetImageData(MaxfileIndex.ToString(), s);
+            //    CheckResult(CorrectImage, DataModel);
+            //    MaxfileIndex++;
             //}
+            //Console.ReadKey();
+            while (true)
+            {
+                try
+                {
+                    var file = Directory.GetFiles(OpenPoseOutPath).OrderByDescending(x => x).Take(2);
+                    var Pathsplit1 = file.ElementAt(1).Split("\\");//最新的
+                    var Pathsplit2 = file.ElementAt(0).Split("\\");//前一張
+                    int.TryParse(Pathsplit2[Pathsplit2.Count() - 1].Split("_")[0], out var fileIndex2);
+                    int.TryParse(Pathsplit1[Pathsplit1.Count() - 1].Split("_")[0], out var fileIndex1);
+                    if (fileIndex2 > MaxfileIndex)
+                    {
+                        var DataModel1 = GetImageData(fileIndex1.ToString(), file.ElementAt(1));
+                        var DataModel2 = GetImageData(fileIndex2.ToString(), file.ElementAt(0));
+                        if (DataModel1.KeyPointList.Count() == 0 || DataModel2.KeyPointList.Count() == 0)
+                        {
+                            break;
+                        }
+                        CheckResult(DataModel1, DataModel2);
+                        MaxfileIndex = fileIndex2;
+                    }
+                }
+                catch (Exception ex)
+                {
+
+                }
+                if (stateCounnt >= 2)
+                {
+                    Console.WriteLine("醒醒!!!!!!");
+                }
+            }
         }
     }
 }
