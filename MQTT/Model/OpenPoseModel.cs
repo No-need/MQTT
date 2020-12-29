@@ -35,6 +35,5 @@ namespace MQTT.Model
 
         public bool Useful { get; set; }
 
-        public bool Result { get; set; }
     }
 }

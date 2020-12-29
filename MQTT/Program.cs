@@ -16,36 +16,17 @@ namespace MQTT
     class Program
     {
         static string OpenPoseOutPath = @"D:\openpose\examples\media_out";
-        static int stateCounnt = 0;
-        public static ImageDataModel GetImageImageModel()
-        {
-            string CorrectPath = Path.Combine(@"C:\Users\noneed\Desktop", "Correct.json");
-            string json = File.ReadAllText(CorrectPath, new System.Text.UTF8Encoding());
-            var Object = JsonSerializer.Deserialize<OpenPoseModel>(json);
-            List<KeyPointModel> List = new List<KeyPointModel>();
-            for (var i = 0; i < 75; i = i + 3)
-            {
-                List.Add(new KeyPointModel
-                {
-                    x = Object.people[0].pose_keypoints_2d[i],
-                    y = Object.people[0].pose_keypoints_2d[i + 1],
-                    Confidence = Object.people[0].pose_keypoints_2d[i + 2]
-                });
-            }
-            ImageDataModel model = new ImageDataModel
-            {
-                Date = DateTime.Now,
-                KeyPointList = List
-            };
-            return model;
-        }
+        static int stateCount = 0;
+        static int check2Count = 0;
+        static int check3Count = 0;
+        static int check4Count = 0;
+        static int check5Count = 0;
 
+        static int SubStatusCount = 0;
+        static int SubCheckCount = 0;
         /// <summary>
         /// ID為檔案編號，file為檔案完整路徑(包含檔案名稱)
         /// </summary>
-        /// <param name="ID"></param>
-        /// <param name="file"></param>
-        /// <returns></returns>
         public static ImageDataModel GetImageData(string ID, string file)
         {
             string json = File.ReadAllText(file, new System.Text.UTF8Encoding());
@@ -84,76 +65,172 @@ namespace MQTT
             return model;
         }
 
-        public static void CheckResult(ImageDataModel DataModel1, ImageDataModel DataModel2)
-        {
-            Dictionary<int, KeyPointModel> Vector = new Dictionary<int, KeyPointModel>();
-            foreach (var point in DataModel2.KeyPointList)
-            {
-                if (true)
-                {
-                    KeyPointModel deviation = new KeyPointModel
-                    {
-                        x = Math.Abs(point.x - DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].x),
-                        y = Math.Abs(point.y - DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].y),
-                        Confidence = (point.Confidence + DataModel1.KeyPointList[DataModel2.KeyPointList.IndexOf(point)].Confidence) / 2
-                    };
-                    Vector.Add(DataModel2.KeyPointList.IndexOf(point), deviation);
-                }
 
-            }
-            Console.WriteLine("與前一張比對");
-            int count = 0;
-            foreach (var v in Vector)
+        public static void CheckResult(ImageDataModel PreModel, ImageDataModel NowModel)
+        {
+            stateCount += check(PreModel.KeyPointList, NowModel.KeyPointList);
+            stateCount += check2(PreModel.KeyPointList, NowModel.KeyPointList);
+            stateCount += check3(NowModel.KeyPointList);
+            stateCount += check4(PreModel.KeyPointList,NowModel.KeyPointList);
+            stateCount += check5(NowModel.KeyPointList);
+
+            SubStatusCount += SubCheck(NowModel.KeyPointList);
+            SubStatusCount += SubCheck2(PreModel.KeyPointList, NowModel.KeyPointList);
+            SubStatusCount += SubCheck3(NowModel.KeyPointList);
+            if(SubStatusCount >= 100)
             {
-                Console.WriteLine($"{v.Key.ToString("D2")},偏移量:x={v.Value.x.ToString("F3")},y={v.Value.y.ToString("F3")}");
-                if (true)
-                {
-                    switch (v.Key)
-                    {
-                        case 0:
-                            break;
-                        case 1:
-                            break;
-                        case 2:
-                            break;
-                        case 3:
-                            if (v.Value.x < 10 && v.Value.y < 10) count++;
-                            break;
-                        case 4:
-                            if (v.Value.x < 10 && v.Value.y < 10) count++;
-                            break;
-                        case 5:
-                            break;
-                        case 6:
-                            if (v.Value.x < 10 && v.Value.y < 10) count++;
-                            break;
-                        case 7:
-                            if (v.Value.x < 10 && v.Value.y < 10) count++;
-                            break;
-                        case 15:
-                            break;
-                        case 16:
-                            break;
-                        case 17:
-                            break;
-                        case 18:
-                            break;
-                    }
-                }
+                ResetStatus();
             }
-            if (count >= 4)
+            if (stateCount >= 100)
             {
-                stateCounnt++;
+                Console.WriteLine("醒醒!!");
+            }
+        }
+
+        #region 加分表
+        //沒轉方向盤
+        public static int check(List<KeyPointModel> pre, List<KeyPointModel> now)
+        {
+            if (GetTwoPointLength(pre[4], now[4]) < 20 && GetTwoPointLength(pre[7], now[7]) < 20)
+            {
+                return 5;
             }
             else
             {
-                stateCounnt--;
-                if (stateCounnt < 0) stateCounnt = 0;
-            };
+                return 0;
+            }
         }
 
+        //點頭
+        public static int check2(List<KeyPointModel> pre, List<KeyPointModel> now)
+        {
+            double Lengthdeviation = Math.Abs(GetTwoPointLength(pre[0],pre[1])-GetTwoPointLength(now[0],now[1]));
+            if (Lengthdeviation > 50)
+            {
+                check2Count++;
+                return 10*check2Count;
+            }
+            else
+            {
+                check2Count = 0;
+                return 0;
+            }
+        }
 
+        //兩手離開方向盤
+        public static int check3(List<KeyPointModel> ImageModel)
+        {
+            if (ImageModel[4].Confidence == 0 && ImageModel[7].Confidence == 0)
+            {
+                check3Count++;
+                return 10*check3Count;
+            }
+            else
+            {
+                check3Count = 0;
+                return 0;
+            }
+        }
 
+        //低頭
+        public static int check4(List<KeyPointModel> pre, List<KeyPointModel> now)
+        {
+            double Lengthdeviation = Math.Abs(GetTwoPointLength(pre[0], pre[1]) - GetTwoPointLength(now[0], now[1]));
+            if (GetTwoPointLength(now[0], now[1]) < 50&&Lengthdeviation<50)
+            {
+                check4Count++;
+                return 10 * check4Count;
+            }
+            else
+            {
+                check4Count = 0;
+                return 0;
+            }
+        }
+
+        //手遮住嘴巴打哈欠
+        public static int check5(List<KeyPointModel> now)
+        {
+            if (GetTwoPointLength(now[4], now[0]) < 50 || GetTwoPointLength(now[7], now[0])<50)
+            {
+                check5Count++;
+                return 10 * check5Count;
+            }
+            else
+            {
+                check5Count = 0;
+                return 0;
+            }
+        }
+        #endregion
+
+        #region 扣分重製表
+        //轉頭
+        public static int SubCheck(List<KeyPointModel> now)
+        {
+            if((now[17].Confidence==0&&now[15].Confidence!=0&&now[0].Confidence!=0&&now[16].Confidence!=0&&now[18].Confidence!=0)
+                || (now[17].Confidence != 0 && now[15].Confidence != 0 && now[0].Confidence != 0 && now[16].Confidence != 0 && now[18].Confidence == 0))
+            {
+                return 10;
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        //轉動方向盤
+        public static int SubCheck2(List<KeyPointModel> pre, List<KeyPointModel> now)
+        {
+            if (GetTwoPointLength(pre[4], now[4]) >20 && GetTwoPointLength(pre[7], now[7]) > 20)
+            {
+                return 5;
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        public static int SubCheck3(List<KeyPointModel> now)
+        {
+            if(now[0].Confidence==0&& now[1].Confidence == 0 && now[2].Confidence == 0 && now[3].Confidence == 0 && now[4].Confidence == 0 && now[5].Confidence == 0 &&
+                now[6].Confidence == 0 && now[7].Confidence == 0 && now[15].Confidence == 0 && now[16].Confidence == 0 && now[17].Confidence == 0 && now[18].Confidence == 0)
+            {
+                return 100;
+            }
+            else
+            {
+                return 0;
+            }
+        }
+        #endregion
+
+        #region 方法
+        public static double GetTwoPointLength(KeyPointModel p1,KeyPointModel p2)
+        {
+            return Math.Sqrt(Math.Pow(p1.x - p2.x,2) + Math.Pow(p1.y - p2.y,2));
+        }
+
+        public static KeyPointModel GetTwoPointVector(KeyPointModel start, KeyPointModel end)
+        {
+            return new KeyPointModel { x = end.x - start.x, y = end.y - start.y };
+        }
+
+        public static double GetTwoPointSlop(KeyPointModel start, KeyPointModel end)
+        {
+            return (end.y - start.y) / (end.x - start.x);
+        }
+
+        public static void ResetStatus()
+        {
+            stateCount = 0;
+            SubStatusCount = 0;
+        }
+
+        #endregion
+
+        #region MQtt
         public static async Task MQTTTest()
         {
             var factory = new MqttFactory();
@@ -185,6 +262,9 @@ namespace MQTT
             });
 
         }
+
+        #endregion
+
         static void Main(string[] args)
         {
             //Task t = MQTTTest();
@@ -193,13 +273,6 @@ namespace MQTT
             string json;
             string filePath = Path.Combine(OpenPoseOutPath, $"{MaxfileIndex.ToString("D12")}_keypoints.json");
             DirectoryInfo OpenPoseDirectory = new DirectoryInfo(OpenPoseOutPath);
-            //foreach(var s in file)
-            //{
-            //    var DataModel = GetImageData(MaxfileIndex.ToString(), s);
-            //    CheckResult(CorrectImage, DataModel);
-            //    MaxfileIndex++;
-            //}
-            //Console.ReadKey();
             while (true)
             {
                 try
@@ -220,13 +293,7 @@ namespace MQTT
                             continue;
                         }
                         CheckResult(DataModel1, DataModel2);
-                    }
-                    if (stateCounnt >= 7)
-                    {
-                        Console.WriteLine("醒醒!!!!!!");
-                        Thread.Sleep(5000);
-                        stateCounnt = 0;
-                    }
+                    }  
                 }
                 catch (Exception ex)
                 {
