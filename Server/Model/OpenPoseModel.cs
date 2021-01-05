@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace MQTT.Model
+namespace Device.Model
 {
     public class OpenPoseModel
     {

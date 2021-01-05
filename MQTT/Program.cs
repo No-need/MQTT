@@ -2,7 +2,6 @@
 using MQTTnet.Client;
 using MQTTnet.Client.Options;
 using MQTTnet.Protocol;
-using MQTT.Model;
 using System;
 using System.Text;
 using System.Threading;
@@ -11,227 +10,18 @@ using System.IO;
 using System.Text.Json;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using MQTT.Model;
+using System.Data.SqlClient;
+
 namespace MQTT
 {
     class Program
     {
-        static string OpenPoseOutPath = @"D:\openpose\examples\media_out";
-        static int stateCount = 0;
-        static int check2Count = 0;
-        static int check3Count = 0;
-        static int check4Count = 0;
-        static int check5Count = 0;
 
-        static int SubStatusCount = 0;
-        static int SubCheckCount = 0;
-        /// <summary>
-        /// ID為檔案編號，file為檔案完整路徑(包含檔案名稱)
-        /// </summary>
-        public static ImageDataModel GetImageData(string ID, string file)
-        {
-            string json = File.ReadAllText(file, new System.Text.UTF8Encoding());
-            var Object = JsonSerializer.Deserialize<OpenPoseModel>(json);
-            if (Object.people.Count() == 0)
-            {
-                Console.WriteLine($"ID:{ID}:無效的json檔");
-                return new ImageDataModel() { ID = ID, Date = DateTime.Now };
-            }
-            List<KeyPointModel> List = new List<KeyPointModel>();
-
-            for (var i = 0; i < 75; i = i + 3)
-            {
-                List.Add(new KeyPointModel
-                {
-                    x = Object.people[0].pose_keypoints_2d[i],
-                    y = Object.people[0].pose_keypoints_2d[i + 1],
-                    Confidence = Object.people[0].pose_keypoints_2d[i + 2]
-                });
-            }
-            Console.WriteLine($"ID:{ID}");
-            foreach (var item in List)
-            {
-                if (item.Confidence > 0)
-                {
-                    Console.WriteLine($"{(List.IndexOf(item)).ToString("D2")}:x={item.x.ToString("F3")},y={item.y.ToString("F3")},置信度={item.Confidence.ToString("P")}");
-                }
-            }
-            ImageDataModel model = new ImageDataModel
-            {
-                ID = ID,
-                Date = DateTime.Now,
-                KeyPointList = List
-            };
-
-            return model;
-        }
-
-
-        public static void CheckResult(ImageDataModel PreModel, ImageDataModel NowModel)
-        {
-            stateCount += check(PreModel.KeyPointList, NowModel.KeyPointList);
-            stateCount += check2(PreModel.KeyPointList, NowModel.KeyPointList);
-            stateCount += check3(NowModel.KeyPointList);
-            stateCount += check4(PreModel.KeyPointList,NowModel.KeyPointList);
-            stateCount += check5(NowModel.KeyPointList);
-
-            SubStatusCount += SubCheck(NowModel.KeyPointList);
-            SubStatusCount += SubCheck2(PreModel.KeyPointList, NowModel.KeyPointList);
-            SubStatusCount += SubCheck3(NowModel.KeyPointList);
-            if(SubStatusCount >= 100)
-            {
-                ResetStatus();
-            }
-            if (stateCount >= 100)
-            {
-                Console.WriteLine("醒醒!!");
-            }
-        }
-
-        #region 加分表
-        //沒轉方向盤
-        public static int check(List<KeyPointModel> pre, List<KeyPointModel> now)
-        {
-            if (GetTwoPointLength(pre[4], now[4]) < 20 && GetTwoPointLength(pre[7], now[7]) < 20)
-            {
-                return 5;
-            }
-            else
-            {
-                return 0;
-            }
-        }
-
-        //點頭
-        public static int check2(List<KeyPointModel> pre, List<KeyPointModel> now)
-        {
-            double Lengthdeviation = Math.Abs(GetTwoPointLength(pre[0],pre[1])-GetTwoPointLength(now[0],now[1]));
-            if (Lengthdeviation > 50)
-            {
-                check2Count++;
-                return 10*check2Count;
-            }
-            else
-            {
-                check2Count = 0;
-                return 0;
-            }
-        }
-
-        //兩手離開方向盤
-        public static int check3(List<KeyPointModel> ImageModel)
-        {
-            if (ImageModel[4].Confidence == 0 && ImageModel[7].Confidence == 0)
-            {
-                check3Count++;
-                return 10*check3Count;
-            }
-            else
-            {
-                check3Count = 0;
-                return 0;
-            }
-        }
-
-        //低頭
-        public static int check4(List<KeyPointModel> pre, List<KeyPointModel> now)
-        {
-            double Lengthdeviation = Math.Abs(GetTwoPointLength(pre[0], pre[1]) - GetTwoPointLength(now[0], now[1]));
-            if (GetTwoPointLength(now[0], now[1]) < 50&&Lengthdeviation<50)
-            {
-                check4Count++;
-                return 10 * check4Count;
-            }
-            else
-            {
-                check4Count = 0;
-                return 0;
-            }
-        }
-
-        //手遮住嘴巴打哈欠
-        public static int check5(List<KeyPointModel> now)
-        {
-            if (GetTwoPointLength(now[4], now[0]) < 50 || GetTwoPointLength(now[7], now[0])<50)
-            {
-                check5Count++;
-                return 10 * check5Count;
-            }
-            else
-            {
-                check5Count = 0;
-                return 0;
-            }
-        }
-        #endregion
-
-        #region 扣分重製表
-        //轉頭
-        public static int SubCheck(List<KeyPointModel> now)
-        {
-            if((now[17].Confidence==0&&now[15].Confidence!=0&&now[0].Confidence!=0&&now[16].Confidence!=0&&now[18].Confidence!=0)
-                || (now[17].Confidence != 0 && now[15].Confidence != 0 && now[0].Confidence != 0 && now[16].Confidence != 0 && now[18].Confidence == 0))
-            {
-                return 10;
-            }
-            else
-            {
-                return 0;
-            }
-        }
-
-        //轉動方向盤
-        public static int SubCheck2(List<KeyPointModel> pre, List<KeyPointModel> now)
-        {
-            if (GetTwoPointLength(pre[4], now[4]) >20 && GetTwoPointLength(pre[7], now[7]) > 20)
-            {
-                return 5;
-            }
-            else
-            {
-                return 0;
-            }
-        }
-
-        public static int SubCheck3(List<KeyPointModel> now)
-        {
-            if(now[0].Confidence==0&& now[1].Confidence == 0 && now[2].Confidence == 0 && now[3].Confidence == 0 && now[4].Confidence == 0 && now[5].Confidence == 0 &&
-                now[6].Confidence == 0 && now[7].Confidence == 0 && now[15].Confidence == 0 && now[16].Confidence == 0 && now[17].Confidence == 0 && now[18].Confidence == 0)
-            {
-                return 100;
-            }
-            else
-            {
-                return 0;
-            }
-        }
-        #endregion
-
-        #region 方法
-        public static double GetTwoPointLength(KeyPointModel p1,KeyPointModel p2)
-        {
-            return Math.Sqrt(Math.Pow(p1.x - p2.x,2) + Math.Pow(p1.y - p2.y,2));
-        }
-
-        public static KeyPointModel GetTwoPointVector(KeyPointModel start, KeyPointModel end)
-        {
-            return new KeyPointModel { x = end.x - start.x, y = end.y - start.y };
-        }
-
-        public static double GetTwoPointSlop(KeyPointModel start, KeyPointModel end)
-        {
-            return (end.y - start.y) / (end.x - start.x);
-        }
-
-        public static void ResetStatus()
-        {
-            stateCount = 0;
-            SubStatusCount = 0;
-        }
-
-        #endregion
-
+        static SqlConnection con;
         #region MQtt
-        public static async Task MQTTTest()
+        public static async Task MQTTLink()
         {
             var factory = new MqttFactory();
             var mqttClient = factory.CreateMqttClient();
@@ -242,63 +32,150 @@ namespace MQTT
             byte[] firstString = uniEncoding.GetBytes("");
             await mqttClient.ConnectAsync(options, CancellationToken.None);
             await mqttClient.SubscribeAsync("/v1/device/24986291524/sensor/123456789/rawdata", MqttQualityOfServiceLevel.AtLeastOnce);
-            var message = new MqttApplicationMessageBuilder()//傳值
-            .WithTopic("/v1/device/24986291524/rawdata").WithContentType("application/json")
-            .WithPayload("[{'id':'123456789','value':['hellow2']}]")
-            .WithExactlyOnceQoS()
-            .WithRetainFlag()
-            .Build();
-            Task.Run(() => mqttClient.PublishAsync(message, CancellationToken.None));
-
+            bool firstFlag = false;
             mqttClient.UseApplicationMessageReceivedHandler(e =>//收到訊息時
             {
-                Console.WriteLine("收到訊息:");
-                Console.WriteLine($"主題 : {e.ApplicationMessage.Topic}");
-                Console.WriteLine($"Response : {Encoding.UTF8.GetString(e.ApplicationMessage.Payload)}");//response的value
-                var ss = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
-                SensorDataModel model = JsonSerializer.Deserialize<SensorDataModel>(Encoding.UTF8.GetString(e.ApplicationMessage.Payload));
-                Console.WriteLine($"QoS模式 : {e.ApplicationMessage.QualityOfServiceLevel}");
-                Console.WriteLine($"Retain = {e.ApplicationMessage.Retain}");
+                if (firstFlag)
+                {
+                    Console.WriteLine("收到訊息:");
+                    Console.WriteLine($"主題 : {e.ApplicationMessage.Topic}");
+                    Console.WriteLine($"Response : {Encoding.UTF8.GetString(e.ApplicationMessage.Payload)}");//response的value
+                    var ss = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+                    SensorDataModel model = JsonSerializer.Deserialize<SensorDataModel>(Encoding.UTF8.GetString(e.ApplicationMessage.Payload));
+                    Console.WriteLine($"QoS模式 : {e.ApplicationMessage.QualityOfServiceLevel}");
+                    Console.WriteLine($"Retain = {e.ApplicationMessage.Retain}");
+                    InsertDriveData(model.value);
+                }
+                else
+                {
+                    firstFlag = true;
+                }
             });
-
         }
 
+        public static async Task MQTTLinkResult()
+        {
+            var factory = new MqttFactory();
+            var mqttClient2 = factory.CreateMqttClient();
+            var options = new MqttClientOptionsBuilder()
+                .WithTcpServer("iot.cht.com.tw", 1883).WithCredentials("PKXRT95R2GFC4BKW4P", "PKXRT95R2GFC4BKW4P")
+                .WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V311).Build();
+            UnicodeEncoding uniEncoding = new UnicodeEncoding();
+            byte[] firstString = uniEncoding.GetBytes("");
+            await mqttClient2.ConnectAsync(options, CancellationToken.None);
+            await mqttClient2.SubscribeAsync("/v1/device/24986291524/sensor/ZAWARUDO/rawdata", MqttQualityOfServiceLevel.AtLeastOnce);
+            bool firstFlag = false;
+            mqttClient2.UseApplicationMessageReceivedHandler(e =>//收到訊息時
+            {
+                if (firstFlag)
+                {
+                    Console.WriteLine("收到訊息:");
+                    Console.WriteLine($"主題 : {e.ApplicationMessage.Topic}");
+                    Console.WriteLine($"Response : {Encoding.UTF8.GetString(e.ApplicationMessage.Payload)}");//response的value
+                    var ss = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+                    SensorDataModel model = JsonSerializer.Deserialize<SensorDataModel>(Encoding.UTF8.GetString(e.ApplicationMessage.Payload));
+                    Console.WriteLine($"QoS模式 : {e.ApplicationMessage.QualityOfServiceLevel}");
+                    Console.WriteLine($"Retain = {e.ApplicationMessage.Retain}");
+                    InsertDriveResult(model.value);
+                }
+                else
+                {
+                    firstFlag = true;
+                }
+
+            });
+        }
         #endregion
 
+        #region sql
+
+        public static void InsertDriveData(List<string> dataList)
+        {
+            string sql = @"INSERT INTO drivedata 
+        (ID, zeroX, zeroY, oneX, oneY, twoX, twoY,
+threeX, threeY, fourX, fourY, fiveX, fiveY, sixX, sixY,
+sevenX, sevenY, eightX, eightY, fifteenX, fifteenY, sixteenX,
+sixteenY, seventeenX, seventeenY, eighteenX, eighteenY, Date) 
+        VALUES(@value1, @value2, @value3,@value4, @value5, @value6,@value7,@value8,@value9,
+@value10,@value11,@value12,@value13,@value14,@value15,@value16,@value17,@value18,@value19,@value20,
+@value21,@value22,@value23,@value24,@value25,@value26,@value27,@value28) ";
+            SqlCommand SqlCmd = new SqlCommand(sql, con);
+            SqlCmd.Parameters.AddWithValue("@value1", dataList[0]);
+            SqlCmd.Parameters.AddWithValue("@value2", dataList.Where(x => x.Contains("zeroX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value3", dataList.Where(x => x.Contains("zeroY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value4", dataList.Where(x => x.Contains("oneX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value5", dataList.Where(x => x.Contains("oneY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value6", dataList.Where(x => x.Contains("twoX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value7", dataList.Where(x => x.Contains("twoY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value8", dataList.Where(x => x.Contains("threeX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value9", dataList.Where(x => x.Contains("threeY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value10", dataList.Where(x => x.Contains("fourX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value11", dataList.Where(x => x.Contains("fourY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value12", dataList.Where(x => x.Contains("fiveX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value13", dataList.Where(x => x.Contains("fiveY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value14", dataList.Where(x => x.Contains("sixX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value15", dataList.Where(x => x.Contains("sixY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value16", dataList.Where(x => x.Contains("sevenX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value17", dataList.Where(x => x.Contains("sevenY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value18", dataList.Where(x => x.Contains("eightX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value19", dataList.Where(x => x.Contains("eightY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value20", dataList.Where(x => x.Contains("fifteenX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value21", dataList.Where(x => x.Contains("fifteenY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value22", dataList.Where(x => x.Contains("sixteenX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value23", dataList.Where(x => x.Contains("sixteenY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value24", dataList.Where(x => x.Contains("seventeenX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value25", dataList.Where(x => x.Contains("seventeenY")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value26", dataList.Where(x => x.Contains("eighteenX")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value27", dataList.Where(x => x.Contains("eighteenY")).FirstOrDefault().Split('=')[1]);
+            DateTime.TryParse(dataList[27], out var date);
+            SqlCmd.Parameters.AddWithValue("@value28", date);
+            SqlCmd.ExecuteNonQuery();
+        }
+
+        public static void InsertDriveResult(List<string> dataList)
+        {
+            string sql = @"INSERT INTO [dbo].[IdentifyResult]
+           ([ID]
+           ,[IsTired]
+           ,[IsRollwheel]
+           ,[IsNod]
+           ,[IsHandleavewheel]
+           ,[IsHeadDown]
+           ,[IsYawn]
+           ,[IsRollHead]
+           ,[IsNotDrive]
+           ,[StatusCount],[SubStatusCount],[Date])
+     VALUES(@value1,@value2,@value3,@value4, @value5, @value6,@value7,@value8,@value9,@value10,@value11,@value12)";
+            SqlCommand SqlCmd = new SqlCommand(sql, con);
+            SqlCmd.Parameters.AddWithValue("@value1", dataList[0]);
+            SqlCmd.Parameters.AddWithValue("@value2", dataList.Where(x => x.Contains("IsTired")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value3", dataList.Where(x => x.Contains("IsRollwheel")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value4", dataList.Where(x => x.Contains("IsNod")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value5", dataList.Where(x => x.Contains("IsHandleavewheel")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value6", dataList.Where(x => x.Contains("IsHeadDown")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value7", dataList.Where(x => x.Contains("IsYawn")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value8", dataList.Where(x => x.Contains("IsRollHead")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value9", dataList.Where(x => x.Contains("IsNotDrive")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value10", dataList.Where(x => x.Contains("StatusCount")).FirstOrDefault().Split('=')[1]);
+            SqlCmd.Parameters.AddWithValue("@value11", dataList.Where(x => x.Contains("SubStatusCount")).FirstOrDefault().Split('=')[1]);
+            DateTime.TryParse(dataList[12], out var date);
+            SqlCmd.Parameters.AddWithValue("@value12", date);
+            SqlCmd.ExecuteNonQuery();
+
+        }
+        #endregion
         static void Main(string[] args)
         {
-            //Task t = MQTTTest();
-            //t.Wait();
-            int MaxfileIndex = 0;
-            string json;
-            string filePath = Path.Combine(OpenPoseOutPath, $"{MaxfileIndex.ToString("D12")}_keypoints.json");
-            DirectoryInfo OpenPoseDirectory = new DirectoryInfo(OpenPoseOutPath);
+            con = new SqlConnection(@"Server=localhost\SQLEXPRESS;Database=tireddrive;Trusted_Connection=True;");
+            con.Open();
+            Task t = MQTTLink();
+            Task t2 = MQTTLinkResult();
+            t.Wait();
+            t2.Wait();
+            
             while (true)
             {
-                try
-                {
-                    var file = OpenPoseDirectory.GetFiles("*.json").OrderByDescending(x=>x.CreationTime).Take(2);
-                    if (file.Count() < 2) continue;
-                    var Pathsplit1 = file.ElementAt(1).FullName.Split("\\");//最新的
-                    var Pathsplit2 = file.ElementAt(0).FullName.Split("\\");//前一張
-                    int.TryParse(Pathsplit2[Pathsplit2.Count() - 1].Split("_")[0], out var fileIndex2);
-                    int.TryParse(Pathsplit1[Pathsplit1.Count() - 1].Split("_")[0], out var fileIndex1);
-                    if (fileIndex2 > MaxfileIndex)
-                    {
-                        var DataModel1 = GetImageData(fileIndex1.ToString(), file.ElementAt(1).FullName);
-                        var DataModel2 = GetImageData(fileIndex2.ToString(), file.ElementAt(0).FullName);
-                        MaxfileIndex = fileIndex2;
-                        if (DataModel1.KeyPointList.Count() == 0 || DataModel2.KeyPointList.Count() == 0)
-                        {
-                            continue;
-                        }
-                        CheckResult(DataModel1, DataModel2);
-                    }  
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex);
-                }
+
             }
         }
     }
