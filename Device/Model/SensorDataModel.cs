@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Server.Model
+namespace Device.Model
 {
     class SensorDataModel
     {

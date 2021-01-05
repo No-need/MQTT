@@ -5,6 +5,10 @@
     <TargetFramework>netcoreapp2.1</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <WarningLevel>3</WarningLevel>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="MQTTnet" Version="3.0.13" />
     <PackageReference Include="System.Data.SqlClient" Version="4.8.2" />
